@@ -3,7 +3,7 @@
 Push WiGLE-format Wi-Fi/BLE wardrive CSVs (and optionally aircraft JSON) to the
 **[WDGoWars](https://wdgwars.pl/)** community wardriving leaderboard.
 
-A small, zero-dependency Python 3 CLI. Stdlib only — no `pip install`.
+A small Python 3 CLI. One dependency: [gungnir](https://github.com/HiroAlleyCat/gungnir), the shared HMAC transport client used by every wdgwars.pl feeder in this family. Install it with `pip install -r requirements.txt` (no git on PATH required — pip fetches it as a tarball over plain HTTPS).
 
 > This is the wifi/BLE companion to [adsb-to-wdgwars (Muninn)](https://github.com/HiroAlleyCat/adsb-to-wdgwars),
 > which handles the ADS-B side. Together they cover the three ingest paths the
@@ -113,36 +113,64 @@ push the last N uploads instead. This is the mode to put on a
 
 ## Installing
 
-There's nothing to install. The script is a single file, depends only on
-Python 3.10+, and uses `urllib` from stdlib — no `pip install`.
+You need **Python 3.10 or newer** and `pip`. Git is **not** required — pip
+fetches gungnir (the one dependency) over plain HTTPS using stdlib `urllib`.
+
+### Option A — ZIP download (no git needed)
+
+1. Grab the ZIP from [the GitHub repo](https://github.com/HiroAlleyCat/wigle-to-wdgwars) (Code → Download ZIP) and unzip it.
+2. From inside the unzipped folder:
+
+```bash
+python3 -m pip install -r requirements.txt
+python3 wigle_to_wdgwars.py --help
+```
+
+### Option B — clone with git
 
 ```bash
 git clone https://github.com/HiroAlleyCat/wigle-to-wdgwars.git
 cd wigle-to-wdgwars
+python3 -m pip install -r requirements.txt
 python3 wigle_to_wdgwars.py --help
 ```
-
-Or just download `wigle_to_wdgwars.py` and run it directly.
 
 ### Windows
 
 It runs on Windows exactly the same way — it's plain Python, no Linux-only
 bits.
 
-1. Install Python from [python.org](https://www.python.org/downloads/) and
+1. Install Python 3.10+ from [python.org](https://www.python.org/downloads/) and
    **tick "Add python.exe to PATH"** in the installer. (Or grab it from the
    Microsoft Store.)
-2. Download `wigle_to_wdgwars.py` to a folder, e.g. `C:\Tools\wigle-to-wdgwars\`.
+2. Download and unzip the repo into a folder, e.g. `C:\Tools\wigle-to-wdgwars\`
+   (or `git clone` it if you have git).
 3. Open PowerShell or Command Prompt in that folder and use `python` (not
    `python3`):
 
 ```powershell
+python -m pip install -r requirements.txt
 python wigle_to_wdgwars.py --whoami --key YOUR_API_KEY_HERE
 python wigle_to_wdgwars.py my-wardrive.wiglecsv.gz --key YOUR_API_KEY_HERE --chunk-size 10000
 ```
 
 For a hands-off scheduled push on Windows, see
 [Running on a schedule → Windows](#windows--task-scheduler).
+
+### Updating
+
+To pick up a new release (which may bump the gungnir pin), pull the latest
+code AND re-run the pip install — `requirements.txt` is the source of truth
+for which gungnir commit goes with which release of this tool:
+
+```bash
+git pull             # or: re-download the ZIP and overwrite the folder
+python3 -m pip install --upgrade -r requirements.txt
+```
+
+If you skip the second line on a dep-bump release, you'll end up with
+new code importing the old gungnir bytes, which is a recipe for subtle
+parity bugs.
 
 ### Where the API key is read from (in order)
 

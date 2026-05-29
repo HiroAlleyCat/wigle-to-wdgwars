@@ -5,4 +5,7 @@
 # Pinned to v0.1.1 for reproducibility. Bumped deliberately when we
 # upgrade gungnir. Switch to a normal `gungnir>=X.Y` pin once gungnir
 # publishes to PyPI.
-gungnir @ git+https://github.com/HiroAlleyCat/gungnir@v0.1.1
+#
+# Uses GitHub's archive tarball URL (not `git+https://`) so end users
+# don't need git installed — pip fetches the .tar.gz over plain HTTPS.
+gungnir @ https://github.com/HiroAlleyCat/gungnir/archive/refs/tags/v0.1.1.tar.gz

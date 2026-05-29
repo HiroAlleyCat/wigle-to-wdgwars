@@ -4,6 +4,41 @@ All notable changes to wigle-to-wdgwars are documented here. Format
 follows [Keep a Changelog](https://keepachangelog.com/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-05-29 - Fix install path for users without git
+
+v1.1.0 introduced a `requirements.txt` with the gungnir dependency
+pinned via `gungnir @ git+https://github.com/...@v0.1.1`. That URL
+form forces pip to shell out to `git clone`, which fails on any
+machine without git on PATH (a common state for casual ZIP
+downloaders, especially on Windows).
+
+The README also still claimed "There's nothing to install. The script
+is a single file, depends only on Python 3.10+, and uses `urllib`
+from stdlib — no `pip install`." That was true in v1.0 but became
+false the moment gungnir was added. New ZIP-download users following
+the README hit `ModuleNotFoundError: No module named 'gungnir'`.
+
+### Fixed
+
+- **`requirements.txt` no longer requires `git` on the user's PATH.**
+  The gungnir pin switched from
+  `gungnir @ git+https://github.com/HiroAlleyCat/gungnir@v0.1.1`
+  to
+  `gungnir @ https://github.com/HiroAlleyCat/gungnir/archive/refs/tags/v0.1.1.tar.gz`
+  — pip fetches the tarball over plain HTTPS with stdlib `urllib`.
+  Same v0.1.1 tag, same gungnir bytes, same reproducibility.
+
+### Documentation
+
+- README's tagline and **Installing** section now correctly state that
+  this is a one-dependency tool (gungnir), document `pip install -r
+  requirements.txt`, and offer a no-git ZIP-download path alongside
+  `git clone`.
+
+- New **Updating** subsection explaining that release bumps may move
+  the gungnir pin, so `git pull` (or re-extracting the ZIP) must be
+  paired with `pip install --upgrade -r requirements.txt`.
+
 ## [1.1.0] — extract signed-JSON transport to gungnir
 
 Structural refactor. **Multipart CSV upload (`/api/upload-csv`) and the
