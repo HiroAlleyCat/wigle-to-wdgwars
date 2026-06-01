@@ -1,0 +1,37 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: python -m pip install --upgrade -r requirements.txt
+
+      - name: Syntax + import
+        # AST parse the script so a bad commit fails CI even before
+        # CLI invocation. Then ensure top-level import works (catches
+        # broken `import gungnir` etc. without --help side effects).
+        run: |
+          python -c "import ast, sys; ast.parse(open('wigle_to_wdgwars.py').read()); print('parse OK')"
+          python -c "import sys; sys.path.insert(0, '.'); import wigle_to_wdgwars; print('import OK, version:', wigle_to_wdgwars.__version__)"
+
+      - name: Smoke-test CLI (--help)
+        run: python wigle_to_wdgwars.py --help | head -5
