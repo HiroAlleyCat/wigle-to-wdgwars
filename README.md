@@ -127,8 +127,9 @@ fetches gungnir (the one dependency) over plain HTTPS using stdlib `urllib`.
 2. From inside the unzipped folder:
 
 ```bash
-python3 -m pip install -r requirements.txt
-python3 wigle_to_wdgwars.py --help
+python3 -m venv .venv          # required on Bookworm / Homebrew (PEP 668)
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python wigle_to_wdgwars.py --help
 ```
 
 ### Option B — clone with git
@@ -136,9 +137,16 @@ python3 wigle_to_wdgwars.py --help
 ```bash
 git clone https://github.com/HiroAlleyCat/wigle-to-wdgwars.git
 cd wigle-to-wdgwars
-python3 -m pip install -r requirements.txt
-python3 wigle_to_wdgwars.py --help
+python3 -m venv .venv          # required on Bookworm / Homebrew (PEP 668)
+.venv/bin/pip install -r requirements.txt
+.venv/bin/python wigle_to_wdgwars.py --help
 ```
+
+> Raspberry Pi OS Bookworm, Debian 12+, Ubuntu 23.04+, and Homebrew Python
+> all enforce PEP 668 and block `pip install` against the system Python.
+> The `.venv/` step above is the safe path. If `python3 -m venv` itself
+> errors out, install the venv module first:
+> `sudo apt install -y python3-venv python3-full`.
 
 ### Windows
 
@@ -170,7 +178,7 @@ for which gungnir commit goes with which release of this tool:
 
 ```bash
 git pull             # or: re-download the ZIP and overwrite the folder
-python3 -m pip install --upgrade -r requirements.txt
+.venv/bin/pip install --upgrade -r requirements.txt
 ```
 
 If you skip the second line on a dep-bump release, you'll end up with

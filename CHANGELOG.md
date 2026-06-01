@@ -4,6 +4,37 @@ All notable changes to wigle-to-wdgwars are documented here. Format
 follows [Keep a Changelog](https://keepachangelog.com/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.2] - 2026-06-01 - README install: PEP 668 / Bookworm fix
+
+README install snippets (Option A ZIP, Option B git, Updating section)
+now use a project-local `.venv/` instead of `python3 -m pip install`
+against the system Python.
+
+On Raspberry Pi OS Bookworm, Debian 12+, Ubuntu 23.04+, and Homebrew
+Python, the previous `python3 -m pip install -r requirements.txt` line
+errored out with `error: externally-managed-environment` (PEP 668).
+Users could work around it with `--break-system-packages` or by
+creating a venv themselves, but the README directed them straight
+into the wall.
+
+Found by sweeping the feeder family after a Pi24 user reported the
+same crash in Muninn's `setup.sh` ([adsb-to-wdgwars#15](https://github.com/HiroAlleyCat/adsb-to-wdgwars/pull/15)).
+Wigle has no wrapper scripts to fix — the install instructions live in
+the README only.
+
+Windows install block is unchanged. Windows Python has no PEP 668
+enforcement, so `python -m pip install` still works there.
+
+### Fixed
+
+- README "Option A — ZIP download" and "Option B — clone with git"
+  now show `python3 -m venv .venv` followed by `.venv/bin/pip install`
+  and `.venv/bin/python wigle_to_wdgwars.py`.
+- "Updating" section uses `.venv/bin/pip install --upgrade` to match.
+- Inline note explains which distros enforce PEP 668 and what to do
+  if `python3 -m venv` itself errors out (missing `python3-venv` apt
+  package).
+
 ## [1.1.1] - 2026-05-29 - Fix install path for users without git
 
 v1.1.0 introduced a `requirements.txt` with the gungnir dependency
