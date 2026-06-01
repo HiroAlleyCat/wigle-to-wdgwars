@@ -5,9 +5,14 @@ Push WiGLE-format Wi-Fi/BLE wardrive CSVs (and optionally aircraft JSON) to the
 
 A small Python 3 CLI. One dependency: [gungnir](https://github.com/HiroAlleyCat/gungnir), the shared HMAC transport client used by every wdgwars.pl feeder in this family. Install it with `pip install -r requirements.txt` (no git on PATH required — pip fetches it as a tarball over plain HTTPS).
 
-> This is the wifi/BLE companion to [adsb-to-wdgwars (Muninn)](https://github.com/HiroAlleyCat/adsb-to-wdgwars),
-> which handles the ADS-B side. Together they cover the three ingest paths the
-> WDGoWars portal exposes today.
+## Family
+
+Sibling repos in the WDGoWars feeder family:
+
+- [Muninn](https://github.com/HiroAlleyCat/adsb-to-wdgwars) — ADS-B feeder
+- [Heimdall](https://github.com/HiroAlleyCat/meshcore-to-wdgwars) — MeshCore LoRa feeder
+- [gungnir](https://github.com/HiroAlleyCat/gungnir) — shared HMAC transport library
+- [wdgwars-api-tester](https://github.com/HiroAlleyCat/wdgwars-api-tester) — API surface probe
 
 ---
 
