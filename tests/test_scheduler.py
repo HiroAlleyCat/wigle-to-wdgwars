@@ -161,6 +161,19 @@ class SchtasksRendererTests(unittest.TestCase):
         self.assertIn("--from-wigle", action)
         self.assertIn("--chunk-size 10000", action)
 
+    def test_action_wrapped_in_cmd_for_logging(self):
+        """schtasks captures nothing on its own. We wrap the python call in
+        `cmd /c "... >> "<log>" 2>&1"` so the daily run leaves an
+        inspectable log under the user profile."""
+        cmd = w.render_schtasks_create("03:00", True, 10000, PY, SCRIPT)
+        action = cmd[cmd.index("/TR") + 1]
+        self.assertTrue(action.startswith("cmd /c "),
+                        f"action must be cmd-wrapped for logging, got: {action!r}")
+        self.assertIn(">>", action, "missing append-redirect for stdout/stderr")
+        self.assertIn("2>&1", action, "missing stderr-merge for log capture")
+        self.assertIn("%USERPROFILE%\\.wigle-to-wdgwars-cron.log", action,
+                      "log path must point under the user profile")
+
     def test_action_quotes_paths_with_spaces(self):
         space_script = Path(r"C:\Program Files\wigle-to-wdgwars\wigle_to_wdgwars.py")
         cmd = w.render_schtasks_create("03:00", True, 10000,

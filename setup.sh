@@ -45,6 +45,12 @@ echo
 echo "[4/4] Saving your API keys + (optionally) installing a timer..."
 "$VENV_PY" wigle_to_wdgwars.py --setup
 
-echo
-read -n 1 -s -r -p "Press any key to close..."
-echo
+# Pause for double-click users so the output stays on screen. Skipped
+# when stdin isn't a TTY (CI, SSH non-interactive, piped scripts) — those
+# callers would otherwise hang here forever waiting for a keystroke that
+# isn't coming.
+if [ -t 0 ]; then
+    echo
+    read -n 1 -s -r -p "Press any key to close..."
+    echo
+fi

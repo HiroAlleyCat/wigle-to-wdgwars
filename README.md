@@ -123,33 +123,116 @@ have a venv), invoke the same flags directly:
     --schedule-chunk-size 10000 --schedule-dry-run
 ```
 
----
+### What to expect after `./setup.sh`
 
-## Quick start
+A few things that can read as "is this broken?" the first time:
 
-The simplest way: grab your API key and paste it right into the command with
-`--key`. No setup, no config files.
+- **The first scheduled tick won't show up on your leaderboard.** `--setup`
+  defaults the timer to dry-run — the tick decodes and writes a log but
+  never POSTs. This is intentional so you can verify the install before
+  flipping live. To go live, re-run `./run.sh --schedule` and answer "no"
+  to the dry-run prompt.
+- **A scheduled run can't read keys from your shell environment.** systemd /
+  cron / schtasks all run in a stripped-down environment without your
+  `$WDGWARS_API_KEY` / `$WIGLE_API_KEY` env vars. The scheduled command
+  reads the saved key files (`~/.config/wigle-to-wdgwars/wdgwars.key` +
+  `wigle.key`) instead. `--setup` saved both for you. If you skip `--setup`
+  and only export env vars, the timer will fail at run time.
+- **WiGLE rate-limits your own-account pulls.** The auto-installed timer
+  runs `--from-wigle --wigle-latest 1` once daily, which stays comfortably
+  under the WiGLE free-tier query budget. If you bump up `--wigle-latest`
+  or run more often, you can hit a per-account quota and start seeing
+  `HTTP 429` in the log.
+
+### Checking it's running
+
+You don't have to wait for the daily fire — verify the install end-to-end
+right after `./setup.sh`:
 
 ```bash
-# 1. Grab your API key from https://wdgwars.pl/account (Settings → API)
+# Linux (systemd user manager)
+systemctl --user list-timers wigle-to-wdgwars.timer
+systemctl --user start  wigle-to-wdgwars.service   # fire one tick now
+journalctl --user -u wigle-to-wdgwars.service -n 30
 
-# 2. Check it works (paste your key after --key)
-python3 wigle_to_wdgwars.py --whoami --key YOUR_API_KEY_HERE
-# → {"ok": true, "username": "...", "gang": "...", "wifi": 1234, "ble": 5678, ...}
+# Linux/Mac (cron — installed when systemd isn't available)
+crontab -l | grep wigle-to-wdgwars
+tail -f ~/.wigle-to-wdgwars-cron.log
 
-# 3. Push your wardrive file (.csv or .gz, both work)
-python3 wigle_to_wdgwars.py my-wardrive.wiglecsv.gz --key YOUR_API_KEY_HERE --chunk-size 10000
+# Windows (schtasks)
+schtasks /Query /TN WigleToWDGoWars /V /FO LIST
+schtasks /Run   /TN WigleToWDGoWars             :: fire one tick now
+notepad %USERPROFILE%\.wigle-to-wdgwars-cron.log
 ```
 
-> **On Windows** use `python` instead of `python3`:
-> `python wigle_to_wdgwars.py --whoami --key YOUR_API_KEY_HERE`
+A `--dry-run` tick that succeeded looks like (in the log / journal):
+
+```
+[wigle] pulling 1 most-recent upload(s): <transid>
+[wigle] <transid>: <N> KB -> WDGoWars
+[wdgwars] POST https://wdgwars.pl/api/upload-csv field=file file=<transid>.csv chunks=1 total=<N> KB
+[wdgwars] dry-run: not sending
+```
+
+The `dry-run: not sending` is the safety stop — your data didn't ship to
+the leaderboard yet, but everything up to that point worked. To flip live:
+
+```bash
+./run.sh --schedule          # interactive, answer "n" to the dry-run prompt
+# or, headless:
+.venv/bin/python wigle_to_wdgwars.py --schedule --schedule-time 03:00 \
+    --schedule-chunk-size 10000     # no --schedule-dry-run = live
+```
+
+### Common surprises
+
+- **`bash: ./setup.sh: Permission denied`** — you downloaded the ZIP instead
+  of `git clone`, and the executable bit didn't survive. Run `bash setup.sh`
+  instead, or `chmod +x *.sh scripts/*.sh` first.
+- **`error: externally-managed-environment` from `pip install`** — Bookworm /
+  Debian 12+ / Ubuntu 23.04+ / Homebrew Python enforce PEP 668 and refuse
+  to install into system Python. The `./setup.sh` flow uses a project-local
+  `.venv/` and works around this. If you've been pasting `python3 -m pip
+  install -r requirements.txt` from an old README, switch to
+  `./setup.sh` (or to the venv recipe in [Installing](#installing) below).
+- **`Failed to create venv` from `./setup.sh`** — the `python3-venv` module
+  isn't installed on Debian/Ubuntu/Pi by default. `sudo apt install -y
+  python3-venv python3-full` and re-run.
+- **`./run.sh` errors with `no API key`** — you skipped `--setup` (or it
+  didn't get to the save step). Run `./run.sh --setup` to do the wizard.
+- **Timer installed but nothing on the leaderboard the next day** — see the
+  dry-run note above. You're seeing the safety stop, not a broken install.
+- **`HTTP 429` in the log** — either WDGoWars is asking you to wait
+  (server-side queue is processing your previous upload — the tool sleeps
+  and retries on the next tick) or WiGLE is rate-limiting you for pulling
+  too often. The cooldown file at `~/.config/wigle-to-wdgwars/cooldown.json`
+  is honored across runs.
+
+---
+
+## Quick start — one-off push without saving keys
+
+If you just want to push a single file right now without saving anything to
+disk, paste the key on the command line. Use the venv from
+[Installing](#installing) — pasting `python3 wigle_to_wdgwars.py` directly
+against system Python errors out with `error: externally-managed-environment`
+on Bookworm / Debian 12+ / Homebrew. The venv path is one extra line and
+works on every distro.
+
+```bash
+# Inside the venv from the Installing section
+.venv/bin/python wigle_to_wdgwars.py --whoami --key YOUR_WDGWARS_API_KEY
+# → [wigle-to-wdgwars] key OK — user=…  wifi=… ble=… aircraft=…
+
+.venv/bin/python wigle_to_wdgwars.py my-wardrive.wiglecsv.gz \
+    --key YOUR_WDGWARS_API_KEY --chunk-size 10000
+```
 
 `--chunk-size 10000` is the safe default for anything over ~5 000 rows. See
-the [Cloudflare 524 footgun](#the-cloudflare-524-footgun) section below for
-why.
+the [Cloudflare 524 footgun](#the-cloudflare-524-footgun) for why.
 
-If you'd rather not paste the key every time, you can store it once instead —
-see [Where the API key is read from](#where-the-api-key-is-read-from-in-order).
+On Windows: `.venv\Scripts\python wigle_to_wdgwars.py ...`. Or just use
+`run.bat` from the [guided setup](#easiest-install--guided-setup) above.
 
 ### No file at all — pull straight from WiGLE
 
@@ -162,15 +245,15 @@ You need two keys: your **WDGoWars** key (`--key`) and your **WiGLE** token
 [wigle.net/account](https://wigle.net/account)).
 
 ```bash
-python3 wigle_to_wdgwars.py --from-wigle \
+.venv/bin/python wigle_to_wdgwars.py --from-wigle \
     --wigle-key YOUR_WIGLE_ENCODED_TOKEN \
     --key YOUR_WDGWARS_API_KEY \
     --chunk-size 10000
 ```
 
 By default it pulls your single most-recent upload. Use `--wigle-latest N` to
-push the last N uploads instead. This is the mode to put on a
-[timer](#running-on-a-schedule-timer) for a fully hands-off pipeline.
+push the last N uploads instead. This is the mode the auto-installed
+[timer](#running-on-a-schedule-timer) uses for a fully hands-off pipeline.
 
 ---
 

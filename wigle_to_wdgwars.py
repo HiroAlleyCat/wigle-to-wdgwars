@@ -263,8 +263,13 @@ def check_wigle_token(token: str, timeout: float = 30) -> int:
 def _prompt_yes_no(question: str, default: bool = True) -> bool:
     """Ask a y/n question on stderr. Returns True for yes, False for no.
 
-    On EOF / Ctrl+C, returns the default so non-interactive runs don't hang."""
+    On EOF / Ctrl+C, returns the default so non-interactive runs don't hang.
+    Always emits a newline after the answer so the next section header
+    doesn't collide with the prompt line when stdin is piped (interactive
+    TTY input gets its own newline from the terminal — but piped input
+    doesn't, leaving section headers glued onto the prompt)."""
     suffix = " [Y/n] " if default else " [y/N] "
+    piped = not sys.stdin.isatty()
     while True:
         try:
             print(question + suffix, end="", flush=True, file=sys.stderr)
@@ -273,6 +278,8 @@ def _prompt_yes_no(question: str, default: bool = True) -> bool:
                 print("", file=sys.stderr)
                 return default
             ans = line.strip().lower()
+            if piped:
+                print("", file=sys.stderr)
         except (KeyboardInterrupt, EOFError):
             print("", file=sys.stderr)
             return default
@@ -956,14 +963,30 @@ def render_schtasks_create(time_hhmm: str, use_from_wigle: bool,
                            chunk_size: int, python_exe: str,
                            script_path: Path,
                            dry_run: bool = False) -> list[str]:
-    """Render the `schtasks /Create` argv for Windows. Pure."""
+    """Render the `schtasks /Create` argv for Windows. Pure.
+
+    Wraps the python invocation in `cmd /c "... >> "<log>" 2>&1"` so the
+    scheduled task's stdout + stderr are appended to a log file under the
+    user's profile. schtasks itself captures nothing — without this, a
+    user who comes back the next day has no way to see what `--dry-run`
+    actually pulled or why the task exited non-zero, only the integer
+    Last Result. Mirrors the cron path's `~/.wigle-to-wdgwars-cron.log`.
+    """
     time_hhmm = _validate_hhmm(time_hhmm)
     argv = _schedule_argv(use_from_wigle, chunk_size)
     argv[0] = python_exe
     argv[1] = str(script_path)
     if dry_run:
         argv.append("--dry-run")
-    action = " ".join(f'"{a}"' if " " in a else a for a in argv)
+    # Quote each token for cmd.exe — anything with whitespace gets wrapped.
+    py_cmd = " ".join(f'"{a}"' if " " in a else a for a in argv)
+    log_path = "%USERPROFILE%\\.wigle-to-wdgwars-cron.log"
+    # `schtasks /TR` gets the whole action as one string. The outer
+    # `cmd /c "..."` lets us redirect stdout+stderr. cmd's quoting rule:
+    # the first and last `"` of the `cmd /c` arg are stripped, so embedded
+    # quotes inside the body survive. schtasks parses this fine because
+    # it doesn't try to re-interpret the action string's quotes.
+    action = f'cmd /c "{py_cmd} >> "{log_path}" 2>&1"'
     return ["schtasks", "/Create", "/TN", WINDOWS_TASK_NAME,
             "/TR", action, "/SC", "DAILY", "/ST", time_hhmm,
             "/RL", "LIMITED", "/F"]
@@ -1106,6 +1129,8 @@ def install_windows_task(time_hhmm: str, use_from_wigle: bool,
     print(f"[schedule] view:    schtasks /Query /TN {WINDOWS_TASK_NAME}",
           file=sys.stderr)
     print(f"[schedule] run now: schtasks /Run /TN {WINDOWS_TASK_NAME}",
+          file=sys.stderr)
+    print(f"[schedule] log:     %USERPROFILE%\\.wigle-to-wdgwars-cron.log",
           file=sys.stderr)
     return 0
 

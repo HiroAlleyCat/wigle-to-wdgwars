@@ -21,6 +21,8 @@ if [ $# -eq 0 ]; then
 else
     "$PY" wigle_to_wdgwars.py "$@"
 fi
-echo
-read -n 1 -s -r -p "Press any key to close..."
-echo
+if [ -t 0 ]; then
+    echo
+    read -n 1 -s -r -p "Press any key to close..."
+    echo
+fi

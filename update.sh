@@ -42,6 +42,8 @@ echo "[3/3] Refreshing wigle_to_wdgwars.py from GitHub..."
 "$VENV_PY" -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/HiroAlleyCat/wigle-to-wdgwars/main/wigle_to_wdgwars.py', 'wigle_to_wdgwars.py')"
 "$VENV_PY" wigle_to_wdgwars.py --version
 
-echo
-read -n 1 -s -r -p "Press any key to close..."
-echo
+if [ -t 0 ]; then
+    echo
+    read -n 1 -s -r -p "Press any key to close..."
+    echo
+fi
