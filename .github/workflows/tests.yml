@@ -33,5 +33,13 @@ jobs:
           python -c "import ast, sys; ast.parse(open('wigle_to_wdgwars.py').read()); print('parse OK')"
           python -c "import sys; sys.path.insert(0, '.'); import wigle_to_wdgwars; print('import OK, version:', wigle_to_wdgwars.__version__)"
 
-      - name: Smoke-test CLI (--help)
-        run: python wigle_to_wdgwars.py --help | head -5
+      - name: Smoke-test CLI (--help / --version)
+        run: |
+          python wigle_to_wdgwars.py --help | head -5
+          python wigle_to_wdgwars.py --version
+
+      - name: Unit tests (offline — every test mocks the network)
+        run: python -m unittest discover tests/ -v
+
+      - name: End-to-end smoke (venv + schedule artifact assertions)
+        run: bash scripts/smoke.sh

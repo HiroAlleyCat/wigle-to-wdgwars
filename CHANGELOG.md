@@ -4,6 +4,80 @@ All notable changes to wigle-to-wdgwars are documented here. Format
 follows [Keep a Changelog](https://keepachangelog.com/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-06-02 - Guided setup + auto-installed daily timer
+
+Brings wigle-to-wdgwars to parity with Muninn's hand-off-able install flow.
+Before this release, getting from a fresh clone to a recurring daily push
+meant: read the install section, make a venv, paste two keys somewhere
+sensible, copy a systemd unit out of the README, edit the paths, run
+`systemctl --user enable --now`. Five steps with five places to get wrong.
+Now it's one command.
+
+### Added
+
+- `--setup` interactive wizard. Prompts for the WDGoWars API key,
+  validates it against `/api/me`, saves to `~/.config/wigle-to-wdgwars/wdgwars.key`
+  with mode 600. Then prompts for the WiGLE "Encoded for use" token,
+  validates by listing one transaction, saves to `wigle.key` mode 600.
+  Then offers to install a daily timer (next bullet). Each step is
+  independently skippable. Re-runnable to rotate keys.
+- `--save-key KEY` / `--save-wigle-key TOKEN`. Non-interactive single-key
+  saves, for provisioning from a script.
+- `--schedule` auto-installer. Writes the right artifact for the host:
+  systemd user `.service` + `.timer` on Linux-with-systemd, cron line on
+  Mac / Linux-without-systemd, schtasks entry on Windows. Defaults:
+  daily at 03:00, `--from-wigle --wigle-latest 1 --chunk-size 10000`,
+  dry-run on first install. Interactive when invoked alone; headless
+  with `--schedule-time` / `--schedule-chunk-size` / `--schedule-dry-run`.
+- `--unschedule` removes every wigle-to-wdgwars-managed schedule entry
+  on the host. Marker comments (`# managed-by-wigle-to-wdgwars`) in
+  every artifact let the uninstaller find them cleanly without
+  clobbering anything else in the user's crontab or systemd unit dir.
+- Bootstrap shim scripts: `setup.sh` / `setup.bat` / `run.sh` /
+  `run.bat` / `update.sh` / `update.bat`. Mirror Muninn's
+  double-clickable pattern. `setup` does venv + deps + `--setup`;
+  `run` runs the default daily push (or forwards arbitrary args);
+  `update` pulls fresh `requirements.txt` + `wigle_to_wdgwars.py`.
+- Test suite. `tests/test_scheduler.py` covers the pure systemd / cron
+  / schtasks renderers (no side effects, no live calls).
+  `tests/test_setup.py` covers the file-write helpers, key validators,
+  and 600-mode enforcement, with `urllib.request.urlopen` blocked at
+  the test-class level to catch any accidental live call. 45 tests,
+  runs offline.
+- `scripts/smoke.sh`. End-to-end pre-release check: throwaway venv +
+  pinned-dep install + unit tests + `--help` / `--version` + on Linux,
+  a `--schedule --schedule-dry-run` against an XDG-isolated `HOME`
+  that asserts the unit artifact contains the marker, the dry-run flag,
+  and **does not** contain `--key` or `--wigle-key` (regression net
+  against accidentally baking secrets into the unit file).
+- `--version` flag. Reports `wigle-to-wdgwars 1.2.0`.
+
+### Security
+
+- API keys never appear in the installed unit file / cron line /
+  schtasks action. The scheduled command relies on the saved key files
+  at `~/.config/wigle-to-wdgwars/*.key` (mode 600) being readable at
+  run time. `--key` / `--wigle-key` are still accepted on the CLI for
+  ad-hoc one-off pushes but are not baked into anything persistent.
+  Smoke test asserts this. Tests assert this.
+- `_write_secret_file` refuses to write through a symlink, opens the
+  file with mode 600 from the start (no umask race), and chmods on
+  POSIX after the fact for belt-and-suspenders. Windows skips the
+  chmod test — the file lives under the user's profile, which is ACL'd
+  to the user.
+
+### Notes for existing users
+
+- Existing key files under `~/.config/wigle-to-wdgwars/` keep working
+  unchanged. `--setup` notices an existing key and asks before
+  replacing it.
+- The CLI flags + env vars + on-disk paths from v1.1.x are unchanged.
+  Old recipes still run as written.
+- Hand-written systemd units / cron lines from the README still work
+  and are still documented. The README now mentions `--schedule` as
+  the fast path and keeps the hand-written recipes as the
+  fine-control fallback.
+
 ## [1.1.2] - 2026-06-01 - README install: PEP 668 / Bookworm fix
 
 README install snippets (Option A ZIP, Option B git, Updating section)
