@@ -1,0 +1,43 @@
+@echo off
+REM Double-click this file to update wigle-to-wdgwars (refreshes deps +
+REM script). Pull requirements.txt first in case a new dep was added,
+REM then deps, then the script.
+
+python -c "import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)" 2>nul
+if errorlevel 1 (
+    echo wigle-to-wdgwars requires Python 3.10 or newer. Your current Python is:
+    python --version 2>nul || echo   ^(not found on PATH^)
+    echo.
+    echo Install Python 3.10+ from https://python.org/downloads/ and re-run.
+    goto :done
+)
+
+echo [1/3] Refreshing requirements.txt from GitHub...
+python -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/HiroAlleyCat/wigle-to-wdgwars/main/requirements.txt', r'%~dp0requirements.txt')"
+if errorlevel 1 (
+    echo.
+    echo Could not fetch requirements.txt. Check internet connection and
+    echo that Python is installed and on PATH.
+    goto :done
+)
+
+echo.
+echo [2/3] Installing/refreshing dependencies...
+python -m pip install --upgrade -r "%~dp0requirements.txt"
+if errorlevel 1 (
+    echo.
+    echo pip install failed. See messages above. Common fixes:
+    echo   - upgrade Python to 3.10 or newer ^(check with: python --version^)
+    echo   - run as administrator if pip needs elevated perms
+    echo   - check that your firewall allows HTTPS to github.com
+    goto :done
+)
+
+echo.
+echo [3/3] Refreshing wigle_to_wdgwars.py from GitHub...
+python -c "import urllib.request as u; u.urlretrieve('https://raw.githubusercontent.com/HiroAlleyCat/wigle-to-wdgwars/main/wigle_to_wdgwars.py', r'%~dp0wigle_to_wdgwars.py')"
+python "%~dp0wigle_to_wdgwars.py" --version
+
+:done
+echo.
+pause

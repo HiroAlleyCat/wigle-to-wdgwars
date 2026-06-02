@@ -1,0 +1,6 @@
+# Force LF on shell + python scripts so they run on Linux/Mac when
+# committed from a Windows host (autocrlf=true on the Windows side
+# otherwise injects CRLFs that break `bash` and `#!/usr/bin/env`).
+*.sh text eol=lf
+*.py text eol=lf
+*.bat text eol=crlf
