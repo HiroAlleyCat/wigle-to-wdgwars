@@ -138,7 +138,7 @@ def main(argv: list[str]) -> int:
     if not findings:
         print(
             f"{readme}: clean (script={script}, "
-            f"{len(readme.read_text().splitlines())} lines)"
+            f"{len(readme.read_text(encoding='utf-8').splitlines())} lines)"
         )
         return 0
     print(
