@@ -34,7 +34,7 @@ Android app, Kismet, hcxdumptool).
 """
 from __future__ import annotations
 
-__version__ = "1.5.0"
+__version__ = "1.5.1"
 GITHUB_REPO = "HiroAlleyCat/wigle-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
@@ -1242,11 +1242,26 @@ def wigle_list_transactions(token: str, limit: int) -> list[str]:
 
 
 def wigle_download_csv(token: str, transid: str) -> bytes:
-    """Download one WiGLE upload as CSV bytes."""
-    status, body = _wigle_get(WIGLE_CSV.format(transid=transid), token, timeout=300)
-    if status != 200:
-        sys.exit(f"[wigle] CSV download failed for {transid}: HTTP {status}")
-    return body
+    """Download one WiGLE upload as CSV bytes.
+
+    WiGLE builds the CSV server-side, so a large upload can take minutes to
+    stream. A single read timeout is transient, not terminal: retry once with a
+    longer ceiling before giving up. (Was a flat 300s, which timed out on big
+    exports and killed the whole daily run.)
+    """
+    last_err = None
+    for attempt, timeout in enumerate((600, 900), start=1):
+        try:
+            status, body = _wigle_get(
+                WIGLE_CSV.format(transid=transid), token, timeout=timeout)
+            if status != 200:
+                sys.exit(f"[wigle] CSV download failed for {transid}: HTTP {status}")
+            return body
+        except TimeoutError as e:
+            last_err = e
+            print(f"[wigle] CSV read timed out after {timeout}s for {transid} "
+                  f"(attempt {attempt}/2)", file=sys.stderr)
+    sys.exit(f"[wigle] CSV download for {transid} timed out after retries: {last_err}")
 
 
 def pull_from_wigle_push_to_wdgwars(wigle_token: str, wdg_key: str, field: str,

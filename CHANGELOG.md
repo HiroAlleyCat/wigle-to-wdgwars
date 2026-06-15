@@ -4,6 +4,17 @@ All notable changes to wigle-to-wdgwars are documented here. Format
 follows [Keep a Changelog](https://keepachangelog.com/) and the
 project uses [Semantic Versioning](https://semver.org/).
 
+## [1.5.1] - 2026-06-15 - Survive slow WiGLE CSV exports
+
+### Fixed
+
+- `wigle_download_csv` retries the WiGLE CSV download with a longer read
+  timeout (600s, then 900s) instead of a flat 300s. WiGLE builds the CSV
+  server-side, so a large upload can take several minutes to stream; the
+  300s ceiling timed out mid-read and crashed the entire daily run with an
+  uncaught `TimeoutError`. A single read timeout is now treated as transient
+  (one retry) rather than terminal.
+
 ## [1.5.0] - 2026-06-09 - Trailing-window gate (--since, default 7d)
 
 Stops cron jobs from re-uploading the entire WiGLE history every tick.
