@@ -31,6 +31,73 @@ See SECURITY-FINDINGS.md.
 - `SECURITY-FINDINGS.md` — the security review write-up; pointer added to
   `SECURITY.md`.
 
+## [1.6.0] - 2026-06-15 - Skip already-processed uploads
+
+Stops the daily `--from-wigle` pull from re-downloading uploads it has
+already pushed. WiGLE regenerates each CSV server-side (minutes for a
+large upload), so re-pulling one that's already on WDGoWars wasted both
+time and quota every night.
+
+### Added
+
+- Persistent processed-transid state at
+  `~/.config/wigle-to-wdgwars/processed-transids.json`. Each WiGLE upload
+  is recorded only after a real (non-dry-run) successful push, so failed
+  uploads and dry-runs are retried.
+- `--reprocess` flag to re-pull uploads even if already recorded.
+
+### Changed
+
+- `--from-wigle` now skips already-processed uploads before downloading;
+  if nothing is new it exits early without hitting WiGLE's slow CSV export.
+
+## [1.5.1] - 2026-06-15 - Survive slow WiGLE CSV exports
+
+### Fixed
+
+- `wigle_download_csv` retries the WiGLE CSV download with a longer read
+  timeout (600s, then 900s) instead of a flat 300s. WiGLE builds the CSV
+  server-side, so a large upload can take several minutes to stream; the
+  300s ceiling timed out mid-read and crashed the entire daily run with an
+  uncaught `TimeoutError`. A single read timeout is now treated as transient
+  (one retry) rather than terminal.
+
+## [1.5.0] - 2026-06-09 - Trailing-window gate (--since, default 7d)
+
+Stops cron jobs from re-uploading the entire WiGLE history every tick.
+Every upload path now applies a row-level filter to the CSV before
+chunking: only rows whose `FirstSeen` falls within the trailing window
+make it through. The default window is 7 days, which matches a typical
+daily-cron cadence with one safety lap of overlap. WDGoWars already
+deduped older rows on the server, so re-pushing them was wasted budget
+on the LOCOSP daily cap and the Cloudflare per-IP `/api/*` quota.
+
+### Added
+
+- `--since DURATION` flag (default `7d`). Accepts `Ns`, `Nm`, `Nh`,
+  `Nd`, `Nw`; a bare integer is days. Applies to file uploads,
+  `--from-wigle` pulls, and `upload_csv_bytes` library callers.
+- `--all-time` flag. Disables the gate; same effect as `--since 0`
+  but easier to read in a cron line.
+- `parse_duration(str) -> int` and `filter_csv_since(bytes, datetime)`
+  public helpers. Sibling tools (Muninn, Heimdall) can vendor them if
+  they want the same gate; semantics match the wider feeder family.
+- `tests/test_since_filter.py` — 14 tests covering the duration
+  parser, the row filter (kept/dropped accounting, header
+  preservation, missing-FirstSeen passthrough, unparseable rows), the
+  apply helper, and the upload-path skip when the window is empty.
+
+### Changed
+
+- `upload_csv`, `upload_csv_bytes`, and
+  `pull_from_wigle_push_to_wdgwars` gained a `since_seconds=` kwarg.
+  Default is `0` for backwards-compat with library callers; the CLI
+  always passes a value (7d unless overridden).
+- When the window filters every row out, the upload path returns 0
+  WITHOUT calling `_upload_chunks` (no empty POST hits LOCOSP).
+- WiGLE-1.6 banner + column header are preserved on filtered bytes
+  even when zero data rows remain, so downstream code that sniffs the
+  format keeps working.
 ## [1.4.0] - 2026-06-05 - 15 MB upload cap (HTTP 413 auto-bisect)
 
 LOCOSP rolled out a temporary 15 MB body cap on every wdgwars.pl upload

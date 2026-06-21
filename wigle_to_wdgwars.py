@@ -34,16 +34,19 @@ Android app, Kismet, hcxdumptool).
 """
 from __future__ import annotations
 
-__version__ = "1.4.0"
+__version__ = "1.6.0"
 GITHUB_REPO = "HiroAlleyCat/wigle-to-wdgwars"
 GITHUB_URL = f"https://github.com/{GITHUB_REPO}"
 
 import argparse
 import collections
+import csv as _csv_mod
 import gzip
+import io
 import json
 import logging
 import os
+import re
 import shutil
 import ssl
 import subprocess
@@ -53,7 +56,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import gungnir
@@ -99,6 +102,7 @@ DEFAULT_KEY_FILE = CONFIG_DIR / "wdgwars.key"
 WIGLE_KEY_FILE = CONFIG_DIR / "wigle.key"
 COOLDOWN_FILE = CONFIG_DIR / "cooldown.json"
 HWM_FILE = CONFIG_DIR / "hwm.json"
+PROCESSED_FILE = CONFIG_DIR / "processed-transids.json"
 
 # ───────────────────────────── Self-update / version check ──────────────────
 #
@@ -675,6 +679,141 @@ def _setup_wigle_token() -> int:
         return 1
 
 
+# ───────────────────────────── Time-window filter ────────────────────────────
+#
+# Gate: by default, only upload observations seen in the last 7 days. WiGLE
+# CSVs the Android app shares can contain years of history; pushing the whole
+# archive every cron run wastes the daily LOCOSP cap and burns the CF /api
+# per-IP budget on rows the server already deduped weeks ago. The filter runs
+# BEFORE chunking so the bisect math (15 MB cap) only sees fresh rows.
+#
+# WiGLE-1.6 FirstSeen format: "YYYY-MM-DD HH:MM:SS" in device-local time.
+# We compare naive (the cutoff is also naive-now), so a 7-day window is
+# always 7×24 hours of wall clock from when the filter ran. Good enough; the
+# row will dedupe on the server if a near-cutoff row slips through twice.
+
+DEFAULT_SINCE = "7d"
+_DURATION_RE = re.compile(r"^\s*(\d+)\s*([smhdw]?)\s*$", re.IGNORECASE)
+_DURATION_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800, "": 86400}
+
+
+def parse_duration(s: str) -> int:
+    """Parse a duration like '7d', '24h', '30m', '168h', '604800s' to seconds.
+
+    A bare integer means days (matches the README phrasing 'past N days').
+    Returns 0 for ``s == "0"`` — caller treats 0 as 'no filter'."""
+    m = _DURATION_RE.match(s or "")
+    if not m:
+        raise ValueError(f"bad duration {s!r}: expected e.g. 7d, 24h, 30m")
+    n, unit = m.group(1), m.group(2).lower()
+    return int(n) * _DURATION_UNITS[unit]
+
+
+def _parse_firstseen(value: str) -> datetime | None:
+    """Parse a WiGLE FirstSeen cell. Returns None on any parse failure."""
+    try:
+        return datetime.strptime(value.strip(), "%Y-%m-%d %H:%M:%S")
+    except (ValueError, AttributeError):
+        return None
+
+
+def filter_csv_since(csv_bytes: bytes, cutoff: datetime) -> tuple[bytes, dict]:
+    """Drop WiGLE-1.6 CSV rows whose FirstSeen is before ``cutoff``.
+
+    Header lines (the WigleWifi banner + the column header) are preserved
+    verbatim. Returns ``(filtered_bytes, stats)`` where stats has keys
+    ``kept``, ``dropped_old``, ``dropped_unparseable``, ``total``.
+
+    If the CSV has no FirstSeen column (atypical: older exports or a
+    custom format), the input is returned unchanged with stats zeroed and
+    a ``no_firstseen=True`` marker so the caller can log it."""
+    text = csv_bytes.decode("utf-8", errors="replace")
+    lines = text.splitlines(keepends=False)
+    if len(lines) < 2:
+        return csv_bytes, {"kept": 0, "dropped_old": 0,
+                          "dropped_unparseable": 0, "total": 0}
+    banner, header_line, *data_rows = lines[0], lines[1], *lines[2:]
+    try:
+        cols = next(_csv_mod.reader([header_line]))
+    except StopIteration:
+        return csv_bytes, {"kept": 0, "dropped_old": 0,
+                          "dropped_unparseable": 0, "total": 0}
+    try:
+        idx = cols.index("FirstSeen")
+    except ValueError:
+        return csv_bytes, {"kept": len(data_rows), "dropped_old": 0,
+                          "dropped_unparseable": 0,
+                          "total": len(data_rows), "no_firstseen": True}
+    kept: list[str] = []
+    dropped_old = 0
+    dropped_unparseable = 0
+    for line in data_rows:
+        if not line.strip():
+            continue
+        try:
+            fields = next(_csv_mod.reader([line]))
+        except (StopIteration, _csv_mod.Error):
+            dropped_unparseable += 1
+            continue
+        if len(fields) <= idx:
+            dropped_unparseable += 1
+            continue
+        ts = _parse_firstseen(fields[idx])
+        if ts is None:
+            dropped_unparseable += 1
+            continue
+        if ts >= cutoff:
+            kept.append(line)
+        else:
+            dropped_old += 1
+    out = banner + "\n" + header_line + "\n"
+    if kept:
+        out += "\n".join(kept) + "\n"
+    return out.encode("utf-8"), {
+        "kept": len(kept),
+        "dropped_old": dropped_old,
+        "dropped_unparseable": dropped_unparseable,
+        "total": len(data_rows),
+    }
+
+
+def _apply_since(csv_bytes: bytes, since_seconds: int, name: str) -> bytes | None:
+    """Apply the --since gate to a CSV. Returns filtered bytes, or None
+    if every data row was filtered out (caller should skip the upload).
+
+    ``since_seconds <= 0`` disables the filter (no-op pass-through)."""
+    if since_seconds <= 0:
+        return csv_bytes
+    cutoff = datetime.now() - timedelta(seconds=since_seconds)
+    filtered, stats = filter_csv_since(csv_bytes, cutoff)
+    if stats.get("no_firstseen"):
+        print(f"[wigle] {name}: no FirstSeen column found, uploading "
+              f"unfiltered ({stats['total']} rows)", file=sys.stderr)
+        return filtered
+    window = _humanize_seconds(since_seconds)
+    print(
+        f"[wigle] {name}: --since {window} kept {stats['kept']}/"
+        f"{stats['total']} rows "
+        f"(dropped {stats['dropped_old']} old, "
+        f"{stats['dropped_unparseable']} unparseable)",
+        file=sys.stderr,
+    )
+    if stats["kept"] == 0:
+        print(f"[wigle] {name}: nothing in the last {window}, skipping upload",
+              file=sys.stderr)
+        return None
+    return filtered
+
+
+def _humanize_seconds(s: int) -> str:
+    """Pretty-print a seconds count back to e.g. '7d' or '12h'."""
+    for unit, suffix in ((604800, "w"), (86400, "d"), (3600, "h"),
+                         (60, "m"), (1, "s")):
+        if s % unit == 0:
+            return f"{s // unit}{suffix}"
+    return f"{s}s"
+
+
 # ───────────────────────────── CSV reading ───────────────────────────────────
 
 def _read_csv_bytes(csv_path: Path) -> bytes:
@@ -924,20 +1063,32 @@ def _upload_chunks(chunks: list[bytes], name: str, key: str, field: str,
 
 
 def upload_csv_bytes(csv_bytes: bytes, name: str, key: str, field: str,
-                     dry_run: bool, chunk_rows: int = 0, cooldown_sec: float = 5.0) -> int:
-    """Upload WiGLE CSV bytes (e.g. pulled from WiGLE) to WDGoWars."""
+                     dry_run: bool, chunk_rows: int = 0, cooldown_sec: float = 5.0,
+                     since_seconds: int = 0) -> int:
+    """Upload WiGLE CSV bytes (e.g. pulled from WiGLE) to WDGoWars.
+
+    ``since_seconds > 0`` drops rows whose FirstSeen is older than the
+    cutoff before chunking (see :func:`filter_csv_since`)."""
+    filtered = _apply_since(csv_bytes, since_seconds, name)
+    if filtered is None:
+        return 0
     _cooldown_check_and_sleep()
-    chunks = _split_bytes(csv_bytes, chunk_rows) if chunk_rows else [csv_bytes]
+    chunks = _split_bytes(filtered, chunk_rows) if chunk_rows else [filtered]
     return _upload_chunks(chunks, name, key, field, dry_run, cooldown_sec)
 
 
 def upload_csv(csv_path: Path, key: str, field: str, dry_run: bool,
-               chunk_rows: int = 0, cooldown_sec: float = 5.0) -> int:
+               chunk_rows: int = 0, cooldown_sec: float = 5.0,
+               since_seconds: int = 0) -> int:
     """Upload a WiGLE CSV file (gzip-aware). Returns shell exit code (0 ok, 1 error)."""
     if not csv_path.is_file():
         sys.exit(f"csv not found: {csv_path}")
+    raw = _read_csv_bytes(csv_path)
+    filtered = _apply_since(raw, since_seconds, csv_path.name)
+    if filtered is None:
+        return 0
     _cooldown_check_and_sleep()
-    chunks = _split_csv(csv_path, chunk_rows) if chunk_rows else [_read_csv_bytes(csv_path)]
+    chunks = _split_bytes(filtered, chunk_rows) if chunk_rows else [filtered]
     return _upload_chunks(chunks, csv_path.name, key, field, dry_run, cooldown_sec)
 
 
@@ -1092,31 +1243,95 @@ def wigle_list_transactions(token: str, limit: int) -> list[str]:
 
 
 def wigle_download_csv(token: str, transid: str) -> bytes:
-    """Download one WiGLE upload as CSV bytes."""
-    status, body = _wigle_get(WIGLE_CSV.format(transid=transid), token, timeout=300)
-    if status != 200:
-        sys.exit(f"[wigle] CSV download failed for {transid}: HTTP {status}")
-    return body
+    """Download one WiGLE upload as CSV bytes.
+
+    WiGLE builds the CSV server-side, so a large upload can take minutes to
+    stream. A single read timeout is transient, not terminal: retry once with a
+    longer ceiling before giving up. (Was a flat 300s, which timed out on big
+    exports and killed the whole daily run.)
+    """
+    last_err = None
+    for attempt, timeout in enumerate((600, 900), start=1):
+        try:
+            status, body = _wigle_get(
+                WIGLE_CSV.format(transid=transid), token, timeout=timeout)
+            if status != 200:
+                sys.exit(f"[wigle] CSV download failed for {transid}: HTTP {status}")
+            return body
+        except TimeoutError as e:
+            last_err = e
+            print(f"[wigle] CSV read timed out after {timeout}s for {transid} "
+                  f"(attempt {attempt}/2)", file=sys.stderr)
+    sys.exit(f"[wigle] CSV download for {transid} timed out after retries: {last_err}")
+
+
+def _load_processed_transids() -> set:
+    """Transids already pushed to WDGoWars (persisted in PROCESSED_FILE).
+
+    Lets the daily pull skip re-downloading uploads it has already sent.
+    WiGLE regenerates each CSV server-side (minutes for a big upload), so
+    re-pulling one that's already on WDGoWars is pure waste."""
+    try:
+        data = json.loads(PROCESSED_FILE.read_text())
+        return set(data.get("processed", []))
+    except Exception:
+        return set()
+
+
+def _mark_transid_processed(transid: str) -> None:
+    """Record a transid as successfully pushed. Best-effort; never raises."""
+    try:
+        seen = _load_processed_transids()
+        seen.add(transid)
+        PROCESSED_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PROCESSED_FILE.write_text(json.dumps({"processed": sorted(seen)}, indent=2))
+    except Exception as e:
+        print(f"[wigle] warning: could not record {transid} as processed: {e}",
+              file=sys.stderr)
 
 
 def pull_from_wigle_push_to_wdgwars(wigle_token: str, wdg_key: str, field: str,
                                     latest: int, dry_run: bool, chunk_rows: int,
-                                    cooldown_sec: float) -> int:
-    """Pull your latest WiGLE upload(s) and push each to WDGoWars."""
+                                    cooldown_sec: float,
+                                    since_seconds: int = 0,
+                                    reprocess: bool = False) -> int:
+    """Pull your latest WiGLE upload(s) and push each to WDGoWars.
+
+    ``since_seconds > 0`` drops rows older than the cutoff from each
+    downloaded WiGLE CSV before uploading.
+
+    Uploads already recorded in PROCESSED_FILE are skipped (no re-download)
+    unless ``reprocess`` is set. A transid is recorded only after a real
+    (non-dry-run) successful push, so failed uploads and dry-runs are retried."""
     transids = wigle_list_transactions(wigle_token, latest)
     if not transids:
         print("[wigle] no uploads found on your account", file=sys.stderr)
         return 0
-    print(f"[wigle] pulling {len(transids)} most-recent upload(s): "
-          f"{', '.join(transids)}", file=sys.stderr)
+
+    processed = set() if reprocess else _load_processed_transids()
+    pending = [t for t in transids if t not in processed]
+    skipped = [t for t in transids if t in processed]
+    if skipped:
+        print(f"[wigle] skipping {len(skipped)} already-processed upload(s): "
+              f"{', '.join(skipped)} (use --reprocess to force)", file=sys.stderr)
+    if not pending:
+        print("[wigle] nothing new to pull — all recent uploads already processed",
+              file=sys.stderr)
+        return 0
+
+    print(f"[wigle] pulling {len(pending)} upload(s): "
+          f"{', '.join(pending)}", file=sys.stderr)
     rc = 0
-    for tid in transids:
+    for tid in pending:
         csv_bytes = wigle_download_csv(wigle_token, tid)
         print(f"[wigle] {tid}: {len(csv_bytes) / 1024:.1f} KB -> WDGoWars",
               file=sys.stderr)
         r = upload_csv_bytes(csv_bytes, f"{tid}.csv", wdg_key, field,
-                             dry_run, chunk_rows, cooldown_sec)
+                             dry_run, chunk_rows, cooldown_sec,
+                             since_seconds=since_seconds)
         rc = rc or r
+        if r == 0 and not dry_run:
+            _mark_transid_processed(tid)
     return rc
 
 
@@ -1647,6 +1862,17 @@ def main() -> int:
                          "flag is mostly belt-and-suspenders.")
     ap.add_argument("--chunk-cooldown", type=float, default=5.0,
                     help="seconds to sleep between chunks (default: 5)")
+    ap.add_argument("--since", metavar="DURATION", default=DEFAULT_SINCE,
+                    help=f"only upload WiGLE rows whose FirstSeen falls within "
+                         f"this trailing window (default: {DEFAULT_SINCE}). "
+                         f"Accepts NNs/m/h/d/w; a bare number is days. Stops "
+                         f"the tool from re-pushing years of WiGLE history on "
+                         f"every cron tick (WDGoWars already deduped them). "
+                         f"Use --all-time to disable.")
+    ap.add_argument("--all-time", action="store_true",
+                    help="disable the --since gate and upload every row in the "
+                         "CSV (matches v1.4.x behavior). Use sparingly: a full "
+                         "WiGLE history can blow the LOCOSP daily cap.")
     ap.add_argument("--whoami", action="store_true",
                     help="GET /api/me to validate the API key, then exit")
     ap.add_argument("--aircraft-json", metavar="FILE",
@@ -1662,6 +1888,9 @@ def main() -> int:
     ap.add_argument("--wigle-latest", type=int, default=1, metavar="N",
                     help="with --from-wigle, how many most-recent WiGLE uploads to pull "
                          "(default: 1)")
+    ap.add_argument("--reprocess", action="store_true",
+                    help="with --from-wigle, re-pull uploads even if already recorded "
+                         "as processed (ignores the processed-transids state file)")
     ap.add_argument("--setup", action="store_true",
                     help="interactive first-time setup — prompts for your "
                          "WDGoWars and WiGLE keys, validates them, saves them "
@@ -1750,11 +1979,20 @@ def main() -> int:
     if args.whoami:
         return whoami(key)
 
+    if args.all_time:
+        since_seconds = 0
+    else:
+        try:
+            since_seconds = parse_duration(args.since)
+        except ValueError as e:
+            ap.error(f"--since: {e}")
+
     if args.from_wigle:
         wigle_token = load_wigle_token(args.wigle_key)
         return pull_from_wigle_push_to_wdgwars(
             wigle_token, key, args.field, args.wigle_latest,
-            args.dry_run, args.chunk_size, args.chunk_cooldown)
+            args.dry_run, args.chunk_size, args.chunk_cooldown,
+            since_seconds=since_seconds, reprocess=args.reprocess)
 
     if args.aircraft_json:
         return upload_aircraft_json(Path(args.aircraft_json), key,
@@ -1764,7 +2002,8 @@ def main() -> int:
         ap.error("provide a CSV path, --from-wigle, --aircraft-json FILE, or --whoami")
 
     return upload_csv(Path(args.csv), key, args.field, args.dry_run,
-                      chunk_rows=args.chunk_size, cooldown_sec=args.chunk_cooldown)
+                      chunk_rows=args.chunk_size, cooldown_sec=args.chunk_cooldown,
+                      since_seconds=since_seconds)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,7 @@ posture is now backed by regression tests ([`tests/test_security.py`](tests/test
 
 | Muninn finding class | Status in wigle-to-wdgwars |
 |---|---|
-| **S2083** — path traversal into a watch state file | **N/A** — wigle has no watch mode and writes no state file. It uploads a CSV/JSON the operator names; it never derives a second path from a watched directory. |
+| **S2083** — path traversal into a watch state file | **N/A** — wigle has no watch mode. It writes a `processed-transids.json` state file (v1.6.0), but at a **fixed** path under `~/.config/wigle-to-wdgwars/`, not one derived from a user-supplied watched directory — so there is no traversal vector. It uploads a CSV/JSON the operator names; it never builds a second path from one of those. |
 | **S5443** — use of a publicly-writable / `/tmp` directory | **N/A** — no `tempfile`, `gettempdir`, or hardcoded `/tmp` path anywhere. Config lives under `~/.config/wigle-to-wdgwars/`. |
 | **S8706** — SQLite connection built from a filename | **N/A** — wigle has no SQLite/`.sqb` support. |
 | **S6350 / S8705** — command / OS-command argument from untrusted data | **Already defended** — the scheduler renderers (`render_systemd_units`, `render_cron_line`, `render_schtasks_create`) take only trusted inputs (`sys.executable`, `__file__`, a validated `HH:MM`, an int chunk size, and a bool). No value from `argv` reaches them. Every argv element is still passed through `_shell_quote()` for systemd/cron, and the time is validated by `_validate_hhmm()`. |
