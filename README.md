@@ -1,18 +1,24 @@
 # wigle-to-wdgwars
 
+<p align="center">
+  <a href="https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars/actions/workflows/ci-quality-gates.yml"><img alt="CI" src="https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars/actions/workflows/ci-quality-gates.yml/badge.svg"></a>
+  <a href="https://sonarcloud.io/dashboard?id=Yggdrasil-AI-labs_wigle-to-wdgwars"><img alt="Quality gate" src="https://sonarcloud.io/api/project_badges/measure?project=Yggdrasil-AI-labs_wigle-to-wdgwars&metric=alert_status"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-b08850.svg"></a>
+</p>
+
 Push WiGLE-format Wi-Fi/BLE wardrive CSVs (and optionally aircraft JSON) to the
 **[WDGoWars](https://wdgwars.pl/)** community wardriving leaderboard.
 
-A small Python 3 CLI. One dependency: [gungnir](https://github.com/HiroAlleyCat/gungnir), the shared HMAC transport client used by every wdgwars.pl feeder in this family. Install it with `pip install -r requirements.txt` (no git on PATH required — pip fetches it as a tarball over plain HTTPS).
+A small Python 3 CLI. One dependency: [gungnir](https://github.com/Yggdrasil-AI-labs/gungnir), the shared HMAC transport client used by every wdgwars.pl feeder in this family. Install it with `pip install -r requirements.txt` (no git on PATH required — pip fetches it as a tarball over plain HTTPS).
 
 ## Family
 
 Sibling repos in the WDGoWars feeder family:
 
-- [Muninn](https://github.com/HiroAlleyCat/adsb-to-wdgwars) — ADS-B feeder
-- [Heimdall](https://github.com/HiroAlleyCat/meshcore-to-wdgwars) — MeshCore LoRa feeder
-- [gungnir](https://github.com/HiroAlleyCat/gungnir) — shared HMAC transport library
-- [wdgwars-api-tester](https://github.com/HiroAlleyCat/wdgwars-api-tester) — API surface probe
+- [Muninn](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars) — ADS-B feeder
+- [Heimdall](https://github.com/Yggdrasil-AI-labs/meshcore-to-wdgwars) — MeshCore LoRa feeder
+- [gungnir](https://github.com/Yggdrasil-AI-labs/gungnir) — shared HMAC transport library
+- [wdgwars-api-tester](https://github.com/Yggdrasil-AI-labs/wdgwars-api-tester) — API surface probe
 
 ---
 
@@ -75,7 +81,7 @@ README, this is the path. One script does the whole install: venv, deps, both
 API keys validated, and a daily timer.
 
 ```bash
-git clone https://github.com/HiroAlleyCat/wigle-to-wdgwars.git
+git clone https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars.git
 cd wigle-to-wdgwars
 ./setup.sh                          # Linux / Mac / Pi
 ```
@@ -299,7 +305,7 @@ fetches gungnir (the one dependency) over plain HTTPS using stdlib `urllib`.
 
 ### Option A — ZIP download (no git needed)
 
-1. Grab the ZIP from [the GitHub repo](https://github.com/HiroAlleyCat/wigle-to-wdgwars) (Code → Download ZIP) and unzip it.
+1. Grab the ZIP from [the GitHub repo](https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars) (Code → Download ZIP) and unzip it.
 2. From inside the unzipped folder:
 
 ```bash
@@ -311,7 +317,7 @@ python3 -m venv .venv          # required on Bookworm / Homebrew (PEP 668)
 ### Option B — clone with git
 
 ```bash
-git clone https://github.com/HiroAlleyCat/wigle-to-wdgwars.git
+git clone https://github.com/Yggdrasil-AI-labs/wigle-to-wdgwars.git
 cd wigle-to-wdgwars
 python3 -m venv .venv          # required on Bookworm / Homebrew (PEP 668)
 .venv/bin/pip install -r requirements.txt
@@ -838,7 +844,7 @@ Pass a JSON file containing a top-level **list** of these record dicts:
 
 If you want a full-featured ADS-B uploader that auto-detects 12 capture
 formats (dump1090 JSON, SBS-1, Mode-S Beast, GDL-90, etc.) and produces
-this JSON for you, use **[Muninn (adsb-to-wdgwars)](https://github.com/HiroAlleyCat/adsb-to-wdgwars)**
+this JSON for you, use **[Muninn (adsb-to-wdgwars)](https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars)**
 instead. This tool's aircraft mode is intended for cases where you already
 have records in this shape (e.g. exported from your own pipeline).
 
@@ -899,7 +905,7 @@ The wardriving + WDGoWars ecosystem of uploaders:
 | Tool | Platform | Path | Repo |
 |---|---|---|---|
 | **wigle-to-wdgwars** (this) | Linux/Mac/Win (Python) | Wi-Fi + BLE CSV, aircraft JSON | (this repo) |
-| **Muninn (adsb-to-wdgwars)** | Linux/Mac/Win (Python) + browser | ADS-B aircraft, 12 capture formats | https://github.com/HiroAlleyCat/adsb-to-wdgwars |
+| **Muninn (adsb-to-wdgwars)** | Linux/Mac/Win (Python) + browser | ADS-B aircraft, 12 capture formats | https://github.com/Yggdrasil-AI-labs/adsb-to-wdgwars |
 | **Piglet** | Arduino / RP2040 | Wi-Fi from on-device captures | https://github.com/Hamspiced/piglet |
 | **Raspyjack `wdgwars_upload`** | Bash Bunny / Pi payload | CSV from Raspyjack payloads | https://github.com/7h30th3r0n3/Raspyjack |
 | **pineapple_pager_wdgwars** | Wi-Fi Pineapple | Pineapple captures | https://github.com/LOCOSP/pineapple_pager_wdgwars |
@@ -930,3 +936,4 @@ community; this tool just bakes it in by default.
 
 WDGoWars is run by its community. If you upload a lot, consider joining a
 gang and helping the leaderboard stay weird.
+
